@@ -30,27 +30,31 @@ type holder struct {
 var once sync.Once
 var proc = "/proc"
 
+//findPids returns a channel of FileInfo matching the pattern /proc/[pid]/
+// these are the directories containing process information in linux
 func findPids() chan os.FileInfo {
 	out := make(chan os.FileInfo)
 	go func() {
-		dpids, e := os.OpenFile(proc, os.O_RDONLY, 000)
-		handle(e)
+		defer close(out)
+		if d, err := os.OpenFile(proc, os.O_RDONLY, 000); err != nil {
+			panic(err)  //bail if we can't read the /proc dir
+		} else {
+			fi, err := d.Readdir(-1)
+			handle(err)
 
-		fi, e := dpids.Readdir(-1)
-		handle(e)
-
-		for _, p := range fi {
-			if isInt(p.Name()) {
-				out <- p
+			for _, p := range fi {
+				if isInt(p.Name()) {
+					out <- p
+				}
 			}
 		}
-		close(out)
 	}()
 	return out
 }
 
+//handle is for errors that we shouldn't stop for, we inform the user about
+// the first, then let the rest slide
 func handle(err error) {
-
 	if err != nil {
 		if strings.HasSuffix(err.Error(), "permission denied") {
 			once.Do(func() {
@@ -61,6 +65,10 @@ func handle(err error) {
 		}
 	}
 }
+
+//getSockets is a pipeline operation that reads fileInfo from in that represents a /proc/[pid]/ directory.
+// we read all the files in /proc/pid/fd, and for all the ones that represent sockets, we
+// create a holder, and pass it to the out channel
 func getSockets(in <-chan os.FileInfo) chan holder {
 
 	out := make(chan holder)
@@ -97,12 +105,12 @@ func isInt(s string) bool {
 	}
 	return true
 }
-
-func mapPorts(m map[string]string, in <-chan holder) chan holder {
+//mapPorts is a pipeline that fills in the port in the holder
+func mapPorts(portMap map[string]string, in <-chan holder) chan holder {
 	out := make(chan holder)
 	go func() {
 		for n := range in {
-			if p, t := m[n.inode]; t {
+			if p, t := portMap[n.inode]; t {
 				n.port, _ = strconv.ParseInt(strings.ToLower(p), 16, 32)
 				out <- n
 			}
@@ -112,6 +120,7 @@ func mapPorts(m map[string]string, in <-chan holder) chan holder {
 	return out
 }
 
+//mapCommands is a pipeline that fills in the commandline in the holder, by reading /proc/[]pid]/cmdline
 func mapCommands(in <-chan holder) chan holder {
 	out := make(chan holder)
 	go func() {
@@ -121,7 +130,7 @@ func mapCommands(in <-chan holder) chan holder {
 			if err != nil {
 				handle(err)
 			}
-			//cmdline uses null bytes as sep, convert to spaces
+			//cmdline uses null bytes as separator, convert to spaces
 			n.cmd = bytes.Replace(n.cmd, []byte{0}, []byte(" "), -1)
 			out <- n
 		}
@@ -130,11 +139,12 @@ func mapCommands(in <-chan holder) chan holder {
 	return out
 }
 
-func grep(r *regexp.Regexp, in <-chan holder) chan holder {
+//grep is a pipeline filter that drops holders when cmdline doesn't match regexp
+func grep(regexp *regexp.Regexp, in <-chan holder) chan holder {
 	out := make(chan holder, 12)
 	go func() {
 		for n := range in {
-			if r.Match(n.cmd) {
+			if regexp.Match(n.cmd) {
 				out <- n
 			}
 		}
@@ -143,6 +153,8 @@ func grep(r *regexp.Regexp, in <-chan holder) chan holder {
 	return out
 }
 
+//gather is a pipeline that reads all elements from the in pipe, groups them by pid,
+// and passes one holder per pid to out channel, with ports set
 func gather(in <-chan holder) chan holder {
 	out := make(chan holder)
 	m := make(map[string]holder)
@@ -171,14 +183,17 @@ func gather(in <-chan holder) chan holder {
 func socketFromLink(p string) (string, bool) {
 	if s, e := os.Readlink(p); e == nil {
 		if strings.HasPrefix(s, "socket:[") {
-			s = s[8 : len(s)-1]
+			s = s[8 : len(s) - 1]
 			return s, true
 		}
 	}
 	return "", false
 
 }
-func emit(in <-chan holder, buf io.Writer) {
+
+//emitBare terminates the pipeline and writes a tab separated line terminated
+// with \\n to buf per holder received on the in channel
+func emitBare(in <-chan holder, buf io.Writer) {
 	for p := range in {
 		if p.ports != "" {
 			fmt.Fprintf(buf, "%s\t%s\t\t%s\n", p.pid, p.ports, p.cmd)
@@ -188,7 +203,9 @@ func emit(in <-chan holder, buf io.Writer) {
 	}
 }
 
-func emitFormatted(in <-chan holder, buf io.Writer) {
+//emitFormatted terminates the pipeline and writes a colorized and formatted
+// table to buf
+func emitFormatted(in <-chan holder, buf io.Writer){
 
 	buffer := &bytes.Buffer{}
 
@@ -219,7 +236,6 @@ func emitFormatted(in <-chan holder, buf io.Writer) {
 
 	loreley.DelimLeft = "<"
 	loreley.DelimRight = ">"
-
 	result, err := loreley.CompileAndExecuteToString(
 		buffer.String(),
 		nil,
@@ -229,7 +245,9 @@ func emitFormatted(in <-chan holder, buf io.Writer) {
 		panic(err)
 	}
 
-	fmt.Print(result)
+	fmt.Fprint(buf,result)
+
+
 }
 
 func main() {
@@ -264,14 +282,15 @@ func main() {
 
 	out := bufio.NewWriter(os.Stdout)
 	if *bare {
-		emit(pipe, out)
+		emitBare(pipe, out)
 	} else {
 		emitFormatted(pipe, out)
 	}
 	out.Flush()
 }
 
-//func mapTCP(in chan Parts) (out chan Parts, err error) {
+// reads /proc/net/tcp or /proc/net/tcp6 to make a map of the listening sockets
+// with
 func getTCPMap(path string, ret map[string]string) (err error) {
 
 	content, err := ioutil.ReadFile(path)
@@ -280,7 +299,7 @@ func getTCPMap(path string, ret map[string]string) (err error) {
 	}
 
 	lines := strings.Split(string(content), "\n")
-	lines = lines[1 : len(lines)-1]
+	lines = lines[1 : len(lines) - 1]
 	words := make([]string, 20)
 	for _, line := range lines {
 		word := bytes.NewBuffer(make([]byte, 32))
@@ -288,9 +307,7 @@ func getTCPMap(path string, ret map[string]string) (err error) {
 		last := rune(0)
 		for _, c := range line {
 			if c == 32 {
-				if i == -1 {
-
-				} else if last != 32 {
+				if i != -1 && last != 32 {
 					words[i] = word.String()
 					word.Reset()
 					i++
@@ -304,12 +321,12 @@ func getTCPMap(path string, ret map[string]string) (err error) {
 			last = c
 		}
 		if len(words) > 8 {
+			//OA is hex for socket state listening
 			if words[3] == "0A" {
-				//listening
 				if _, t := ret[words[9]]; !t {
 					s := strings.Split(words[1], ":")
 					if len(s) > 1 {
-						p := s[len(s)-1]
+						p := s[len(s) - 1]
 						ret[words[9]] = p
 					}
 				}

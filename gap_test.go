@@ -30,11 +30,42 @@ func TestShortPipe(t *testing.T) {
 
 	m := map[string]string{"21620": "18EB"}
 	buf := new(bytes.Buffer)
-	emit(mapPorts(m, getSockets(findPids())), buf)
+	emitBare(mapPorts(m, getSockets(findPids())), buf)
 	s := buf.String()
 	assert.Contains(t, s, "1446\t6379")
 	assert.Regexp(t, "^[0-9]+\\s[0-9]+\\s*\\n$", s)
 
+}
+
+func TestEmitBare(t *testing.T) {
+	proc = "spec/proc"
+
+	buf := new(bytes.Buffer)
+	h := holder{pid:"1446",port:int64(6379)}
+	emitBare(from(h),buf)
+
+	s := buf.String()
+	assert.Equal(t, "1446\t6379\t\t\n",s)
+}
+
+func TestEmitFormatted(t *testing.T) {
+	proc = "spec/proc"
+
+	buf := new(bytes.Buffer)
+	h := holder{pid:"1446",port:int64(6379)}
+	emitFormatted(from(h),buf)
+
+	s := buf.String()
+	assert.Equal(t, "pid   port\n1446  6379  \n",s)
+
+}
+func from(v holder)chan holder{
+	in := make(chan holder)
+	go func(){
+		in <- v
+		close(in)
+	}()
+	return in
 }
 
 func TestCommands(t *testing.T) {
