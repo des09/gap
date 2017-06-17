@@ -108,6 +108,9 @@ func getSockets(in <-chan os.FileInfo) chan holder {
 	return out
 }
 
+//isInt is a silly optimization, but it is 6x faster than using
+// if _,err strconv.Atoi(s) ; err != nil
+// it gets called a couple hundred times on my mostly idle box, saving < .03ms
 func isInt(s string) bool {
 	for _, c := range s {
 		if c < 48 || c > 57 {

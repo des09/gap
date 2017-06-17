@@ -16,13 +16,13 @@ type ht struct {
 func TestGetTCPMap(t *testing.T) {
 	r := map[string]string{}
 
-	getTCPMap("spec/proc/net/tcp", r)
+	getTCPMap("testdata/proc/net/tcp", r)
 	assert.NotEmpty(t, r)
 	assert.Equal(t, 6, len(r))
 	assert.Equal(t, "18EB", r["21620"])
 	fmt.Print(r)
 
-	getTCPMap("spec/proc/net/tcp6", r)
+	getTCPMap("testdata/proc/net/tcp6", r)
 	assert.NotEmpty(t, r)
 	assert.Equal(t, 6, len(r))
 	assert.Equal(t, "18EB", r["21620"])
@@ -30,7 +30,7 @@ func TestGetTCPMap(t *testing.T) {
 }
 
 func TestShortPipe(t *testing.T) {
-	proc = "spec/proc"
+	proc = "testdata/proc"
 
 	m := map[string]string{"21620": "18EB"}
 	buf := new(bytes.Buffer)
@@ -88,7 +88,7 @@ func from(vi ...holder) chan holder {
 }
 
 func TestMapCommands(t *testing.T) {
-	proc = "spec/proc"
+	proc = "testdata/proc"
 	in := make(chan holder)
 	out := mapCommands(in)
 
