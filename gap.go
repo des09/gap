@@ -20,13 +20,39 @@ import (
 )
 
 type holder struct {
-	pid      string
-	inode    string
-	port     int64
-	ports    string
-	cmd      []byte
+	pid     string
+	inode   string
+	port    int64
+	ports   string
+	cmd     []byte
+	details map[detailType]interface{}
+}
+
+type detailType int
+
+const (
+	color detailType = iota
+)
+
+type colorDetail struct {
 	cmdColor int
 }
+
+func (n *holder) getColor() (colorDetail, bool) {
+	if c, ok := n.details[color]; ok {
+		cd, ok := c.(colorDetail)
+		return cd, ok
+	}
+	return colorDetail{}, false
+}
+
+func (n *holder) setColor(color int) {
+	if n.details == nil {
+		n.details = make(map[detailType]interface{}, 1)
+	}
+	n.details[color] = colorDetail{color}
+}
+
 type alias struct {
 	display []byte
 	regexp  *regexp.Regexp
@@ -310,8 +336,8 @@ func emitFormatted(in <-chan holder, buf io.Writer) {
 		if p.ports == "" {
 			p.ports = strconv.FormatInt(p.port, 10)
 		}
-		if p.cmdColor > 0 {
-			p.cmd = []byte(fmt.Sprintf("<fg %d>%s", p.cmdColor, p.cmd))
+		if c, ok := p.getColor(); ok {
+			p.cmd = []byte(fmt.Sprintf("<fg %d>%s", c.cmdColor, p.cmd))
 		}
 		writer.Write([]byte(strings.Join(
 			[]string{
@@ -356,7 +382,7 @@ func mapAliases(in chan holder) chan holder {
 					}
 
 					n.cmd = v
-					n.cmdColor = r.color
+					n.setColor(r.color)
 				}
 			}
 			out <- n
@@ -376,6 +402,7 @@ func main() {
 	grepStr := flag.StringP("grep", "g", "", "grep for command")
 	//kill := flag.Int("kill", false, "list commands")
 	tableOutput := flag.BoolP("table", "t", false, "output one line per port")
+	dumpPortMap := flag.BoolP("dump-ports", "", false, "for debugging")
 
 	flag.Parse()
 
@@ -385,6 +412,9 @@ func main() {
 	if err != nil {
 		handle(err)
 		return
+	}
+	if *dumpPortMap {
+		fmt.Println(m)
 	}
 
 	pipe := mapPorts(m, getSockets(findPids()))

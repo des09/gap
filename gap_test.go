@@ -63,7 +63,16 @@ func TestEmitFormatted(t *testing.T) {
 	tcs := []ht{
 		{h: holder{pid: "1446", port: int64(6379)}, t: "pid   port\n1446  6379  \n"},
 		{h: holder{pid: "1446", port: int64(6379), ports: "ports"}, t: "pid   port\n1446  ports  \n"},
-		{h: holder{pid: "1446", port: int64(6379), cmd: []byte("cmd "), cmdColor: 22}, t: "pid   port\n1446  6379  cmd \n"},
+		{
+			h: holder{
+				pid:  "1446",
+				port: int64(6379),
+				cmd:  []byte("cmd "),
+				details: map[detailType]interface{}{
+					color: colorDetail{22},
+				},
+			},
+			t: "pid   port\n1446  6379  cmd \n"},
 	}
 
 	for _, tc := range tcs {
@@ -125,6 +134,26 @@ func TestGather(t *testing.T) {
 	assert.Equal(t, "2,12,21", m["1446"].ports)
 	assert.Equal(t, int64(2), m["1446"].port)
 	assert.Equal(t, "3", m["1447"].ports)
+}
+
+func TestAlias(t *testing.T) {
+	in := make(chan holder)
+	out := mapAliases(in)
+
+	in <- holder{pid: "1446", port: int64(12), cmd: []byte("/x/y/java -Dblag webstorm foo bar")}
+	po := <-out
+	assert.Equal(t, "webstorm", string(po.cmd))
+	_, ok := po.getColor()
+	assert.True(t, ok)
+
+	in <- holder{cmd: []byte("/opt/ccc/not-there")}
+	po = <-out
+	assert.Equal(t, "/opt/ccc/not-there", string(po.cmd))
+	_, ok = po.getColor()
+	assert.False(t, ok)
+
+	close(in)
+
 }
 
 func TestSortJ(t *testing.T) {
