@@ -46,11 +46,11 @@ func (n *holder) getColor() (colorDetail, bool) {
 	return colorDetail{}, false
 }
 
-func (n *holder) setColor(color int) {
+func (n *holder) setColor(c int) {
 	if n.details == nil {
 		n.details = make(map[detailType]interface{}, 1)
 	}
-	n.details[color] = colorDetail{color}
+	n.details[color] = colorDetail{c}
 }
 
 type alias struct {
