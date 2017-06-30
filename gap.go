@@ -25,32 +25,11 @@ type holder struct {
 	port    int64
 	ports   string
 	cmd     []byte
-	details map[detailType]interface{}
+	details details
 }
 
-type detailType int
-
-const (
-	color detailType = iota
-)
-
-type colorDetail struct {
+type details struct {
 	cmdColor int
-}
-
-func (n *holder) getColor() (colorDetail, bool) {
-	if c, ok := n.details[color]; ok {
-		cd, ok := c.(colorDetail)
-		return cd, ok
-	}
-	return colorDetail{}, false
-}
-
-func (n *holder) setColor(c int) {
-	if n.details == nil {
-		n.details = make(map[detailType]interface{}, 1)
-	}
-	n.details[color] = colorDetail{c}
 }
 
 type alias struct {
@@ -336,8 +315,8 @@ func emitFormatted(in <-chan holder, buf io.Writer) {
 		if p.ports == "" {
 			p.ports = strconv.FormatInt(p.port, 10)
 		}
-		if c, ok := p.getColor(); ok {
-			p.cmd = []byte(fmt.Sprintf("<fg %d>%s", c.cmdColor, p.cmd))
+		if p.details.cmdColor != 0 {
+			p.cmd = []byte(fmt.Sprintf("<fg %d>%s", p.details.cmdColor, p.cmd))
 		}
 		writer.Write([]byte(strings.Join(
 			[]string{
@@ -382,7 +361,7 @@ func mapAliases(in chan holder) chan holder {
 					}
 
 					n.cmd = v
-					n.setColor(r.color)
+					n.details.cmdColor = r.color
 				}
 			}
 			out <- n
