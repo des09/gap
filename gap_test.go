@@ -65,12 +65,10 @@ func TestEmitFormatted(t *testing.T) {
 		{h: holder{pid: "1446", port: int64(6379), ports: "ports"}, t: "pid   port\n1446  ports  \n"},
 		{
 			h: holder{
-				pid:  "1446",
-				port: int64(6379),
-				cmd:  []byte("cmd "),
-				details: map[detailType]interface{}{
-					color: colorDetail{22},
-				},
+				pid:     "1446",
+				port:    int64(6379),
+				cmd:     []byte("cmd "),
+				details: details{cmdColor: 22},
 			},
 			t: "pid   port\n1446  6379  cmd \n"},
 	}
@@ -143,14 +141,12 @@ func TestAlias(t *testing.T) {
 	in <- holder{pid: "1446", port: int64(12), cmd: []byte("/x/y/java -Dblag webstorm foo bar")}
 	po := <-out
 	assert.Equal(t, "webstorm", string(po.cmd))
-	_, ok := po.getColor()
-	assert.True(t, ok)
+	//todo magic number
+	assert.Equal(t, 51, po.details.cmdColor)
 
 	in <- holder{cmd: []byte("/opt/ccc/not-there")}
 	po = <-out
-	assert.Equal(t, "/opt/ccc/not-there", string(po.cmd))
-	_, ok = po.getColor()
-	assert.False(t, ok)
+	assert.Equal(t, 0, po.details.cmdColor)
 
 	close(in)
 
